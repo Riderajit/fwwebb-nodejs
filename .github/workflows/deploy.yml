@@ -1,0 +1,59 @@
+name: Deploy Node.js project to Azure Function App
+
+on:
+  push:
+    branches: ["main"]
+
+env:
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  FUNCTION_APP_NAME: ${{ secrets.FUNCTION_APP_NAME }}
+  NODE_VERSION: '18.x'  # set your desired Node.js version
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout GitHub Action
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ vars.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.NODE_VERSION }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            curl apt-transport-https lsb-release gnupg bash zip unzip git build-essential python3 jq
+
+      - name: Install Azure CLI
+        run: |
+          curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
+          sudo install -o root -g root -m 644 microsoft.gpg /etc/apt/trusted.gpg.d/
+          echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/azure-cli.list
+          sudo apt-get update && sudo apt-get install -y azure-cli
+          az version
+
+      - name: Install Azure Functions Core Tools
+        run: npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
+      - name: Azure Login
+        run: |
+          az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
+          echo "✅ Azure login successful"
+          az account show
+
+      - name: Install Node.js dependencies and build project
+        run: |
+          cd az-authfunction
+          npm install
+          npm install @azure/functions --save
+          npm run build
+
+      - name: Publish to Azure Function App
+        run: |
+          cd az-authfunction
+          func azure functionapp publish "$FUNCTION_APP_NAME" --typescript
